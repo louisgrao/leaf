@@ -68,7 +68,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         return $slug;
     }
-
+    
     public function save()
     {
         $ignoreId = $this->group ? $this->group->id : null;
@@ -78,14 +78,43 @@ new #[Layout('components.layouts.admin')] class extends Component {
             'description' => 'nullable|string',
         ]);
 
+        $filteredSchema = array_values(array_filter($this->schema, function ($row) {
+            return !empty(trim($row['name'] ?? ''));
+        }));
+
+        $expressionLanguage = new ExpressionLanguage();
+        $availableVars = [];
+
+        // 1st Pass: Collect all valid variables globally from the schema
+        foreach ($filteredSchema as $field) {
+            if (in_array($field['type'], ['int', 'boolean']) && !empty(trim($field['name']))) {
+                $availableVars[] = $field['name'];
+            }
+        }
+
+        // 2nd Pass: Validate defaults and expressions
+        foreach ($filteredSchema as $index => $field) {
+            if ($field['type'] === 'int' && $field['default'] !== '' && !is_numeric($field['default'])) {
+                $this->addError("schema.{$index}.default", "Default value for '{$field['name']}' must be a number.");
+                return;
+            }
+            if ($field['type'] === 'boolean' && $field['default'] !== '' && !in_array(strtolower((string)$field['default']), ['1', '0', 'true', 'false', 'yes', 'no'])) {
+                $this->addError("schema.{$index}.default", "Default value for '{$field['name']}' must be boolean (true/false/1/0).");
+                return;
+            }
+
+            if ($field['type'] === 'expression') {
+                try {
+                    $expressionLanguage->parse($field['default'], $availableVars);
+                } catch (\Exception $e) {
+                    $this->addError('form_error', "Expression error in '{$field['name']}': " . $e->getMessage());
+                    return;
+                }
+            }
+        }
+        // 2. Database Transaction
         try {
-            DB::transaction(function () use ($ignoreId) {
-
-                $filteredSchema = array_values(array_filter($this->schema, function ($row) {
-                    return !empty(trim($row['name'] ?? ''));
-                }));
-
-
+            DB::transaction(function () use ($ignoreId, $filteredSchema) {
                 $jsonAttributes = [
                     'is_sellable' => $this->is_sellable ? 1 : 0,
                     'child_schema' => $filteredSchema,
@@ -106,10 +135,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     ]);
 
                     $this->group->describedBy()->sync($this->descriptor_groups);
-                    
-                    $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
-                } else 
-                {
+                } else {
                     $base = ItemBase::create([
                         'base_title' => $this->base_title,
                         'slug' => $slug,
@@ -129,15 +155,16 @@ new #[Layout('components.layouts.admin')] class extends Component {
                         $base->describedBy()->sync($this->descriptor_groups);
                     }
                     
+                    // Reassign to property to route properly below
+                    $this->group = $base;
                 }
             });
-            $this->redirect('/admin', navigate: true);
+
+            $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
 
         } catch (\Exception $e) {
             $this->addError('form_error', 'Failed to save: ' . $e->getMessage());
         }
-            
-        
     }
 
     public function with()
@@ -194,19 +221,52 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
             <div class="flex flex-col gap-2">
                 @foreach($schema as $index => $row)
-                    <div class="flex gap-2 items-center text-sm">
-                        <input type="text" wire:model="schema.{{ $index }}.name" placeholder="Name" class="border border-gray-300 p-1 flex-1">
+                    <div class="flex flex-col gap-1">
+                        <div class="flex gap-2 items-center text-sm">
+                            <input type="text" wire:model.live.debounce.300ms="schema.{{ $index }}.name" placeholder="Name" class="border border-gray-300 p-1 flex-1">
+                            
+                            <select wire:model.live="schema.{{ $index }}.type" class="border border-gray-300 p-1">
+                                <option value="string">String</option>
+                                <option value="int">Integer</option>
+                                <option value="boolean">Boolean</option>
+                                <option value="expression">Expression (Math)</option>
+                            </select>
+
+                            @if($schema[$index]['type'] === 'expression')
+                                @php
+                                    $validVars = collect($schema)
+                                        ->filter(fn($f) => !empty($f['name']) && in_array($f['type'], ['int', 'boolean']))
+                                        ->pluck('name')->values()->toJson();
+                                @endphp
+                                <div wire:key="expr-{{ $index }}-{{ md5($validVars) }}" 
+                                    x-data="{
+                                        text: @entangle('schema.'.$index.'.default').live,
+                                        vars: {{ $validVars }},
+                                        get highlighted() {
+                                            let val = (typeof this.text === 'string') ? this.text : '';
+                                            let escaped = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                            if (this.vars.length > 0) {
+                                                let regex = new RegExp('\\b(' + this.vars.join('|') + ')\\b', 'g');
+                                                escaped = escaped.replace(regex, '<span class=\'text-blue-500 font-semibold\'>$1</span>');
+                                            }
+                                            return escaped;
+                                        }
+                                    }" class="relative flex-1 font-mono text-sm">
+                                    
+                                    <div x-ref="backdrop" class="absolute inset-0 p-1 border border-transparent whitespace-pre text-gray-600 pointer-events-none overflow-hidden" x-html="highlighted"></div>
+                                    
+                                    <input type="text" x-model="text" @scroll="$refs.backdrop.scrollLeft = $el.scrollLeft" placeholder="e.g. width * height" class="w-full h-full border border-gray-300 p-1 bg-transparent text-transparent caret-black focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+                                </div>
+                            @else
+                                <input type="text" wire:model.live.debounce.300ms="schema.{{ $index }}.default" placeholder="Default" class="border border-gray-300 p-1 flex-1 text-gray-900 bg-white font-sans text-sm">
+                            @endif
+
+                            <button type="button" wire:click="removeSchemaRow({{ $index }})" class="text-red-600 text-xs px-1">Remove</button>
+                        </div>
                         
-                        <select wire:model="schema.{{ $index }}.type" class="border border-gray-300 p-1">
-                            <option value="string">String</option>
-                            <option value="int">Integer</option>
-                            <option value="boolean">Boolean</option>
-                            <option value="expression">Expression (Math)</option>
-                        </select>
-                        <input type="text" wire:model="schema.{{ $index }}.default" placeholder="Default / Formula" class="border border-gray-300 p-1 flex-1">
-
-
-                        <button type="button" wire:click="removeSchemaRow({{ $index }})" class="text-red-600 text-xs px-1">Remove</button>
+                        @error("schema.{$index}.default")
+                            <span class="text-red-500 text-xs">{{ $message }}</span>
+                        @enderror
                     </div>
                 @endforeach
             </div>

@@ -64,6 +64,42 @@ new #[Layout('components.layouts.admin')] class extends Component {
         $this->allowedDescriptorGroups = ItemBase::with('children')
             ->whereIn('id', $this->parentGroup->describedBy()->pluck('item_bases.id'))
             ->get();
+
+        $this->calculateExpressions();
+    }
+
+    public function calculateExpressions()
+    {
+        $expressionLanguage = new ExpressionLanguage();
+        
+        // 1. Sanitize inputs to prevent type errors and handle empty strings
+        foreach ($this->schema as $field) {
+            if ($field['type'] === 'int') {
+                if (!isset($this->json_data[$field['name']]) || trim((string)$this->json_data[$field['name']]) === '') {
+                    $this->json_data[$field['name']] = 0;
+                } else {
+                    $this->json_data[$field['name']] = (int) $this->json_data[$field['name']];
+                }
+            } elseif ($field['type'] === 'boolean') {
+                $this->json_data[$field['name']] = (bool) ($this->json_data[$field['name']] ?? false);
+            }
+        }
+
+        // 2. Evaluate expressions using sanitized data
+        foreach ($this->schema as $field) {
+            if ($field['type'] === 'expression') {
+                try {
+                    $this->json_data[$field['name']] = $expressionLanguage->evaluate($field['default'], $this->json_data);
+                } catch (\Exception $e) {
+                    $this->json_data[$field['name']] = 'Error: Missing or invalid variables';
+                }
+            }
+        }
+    }
+
+    public function updatedJsonData()
+    {
+        $this->calculateExpressions();
     }
 
     private function generateUniqueSlug($title, $ignoreId = null)
@@ -112,13 +148,9 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         try {
             DB::transaction(function () use ($ignoreId) {
-                // Process Expressions
-                $expressionLanguage = new ExpressionLanguage();
-                foreach ($this->schema as $field) {
-                    if ($field['type'] === 'expression') {
-                        $this->json_data[$field['name']] = $expressionLanguage->evaluate($field['default'], $this->json_data);
-                    }
-                }
+                
+                // Final calculation pass to guarantee defaults are applied before saving
+                $this->calculateExpressions();
 
                 $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
 
@@ -134,7 +166,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     'title' => $this->base_title,
                     'price' => $this->is_sellable ? $this->base_price : 0,
                     'status' => (bool) $this->base_status,
-                    'sku' => $this->is_sellable ? $this->sku : null,
+                    'sku' => ($this->is_sellable && trim($this->sku) !== '') ? $this->sku : null,
                     'quantity' => $this->is_sellable ? $this->quantity : 0,
                     'json_attributes' => !empty($this->schema) ? $this->json_data : null,
                 ];
@@ -211,17 +243,16 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     @foreach($schema as $field)
                         <div>
                             <label class="block mb-1 capitalize text-xs text-gray-600">{{ $field['name'] }}</label>
-                            
                             @if($field['type'] === 'int')
-                                <input type="number" wire:model="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
+                                <input type="number" wire:model.live.debounce.300ms="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
                             @elseif($field['type'] === 'boolean')
                                 <label class="flex items-center gap-1.5 mt-2">
-                                    <input type="checkbox" wire:model="json_data.{{ $field['name'] }}"> Yes
+                                    <input type="checkbox" wire:model.live="json_data.{{ $field['name'] }}"> Yes
                                 </label>
                             @elseif($field['type'] === 'expression')
-                                <input type="text" disabled value="Calculated on save: {{ $field['default'] }}" class="border border-gray-200 bg-gray-50 text-gray-400 p-1.5 w-full italic cursor-not-allowed">
+                                <input type="text" disabled value="{{ $json_data[$field['name']] ?? '0' }}" title="Formula: {{ $field['default'] }}" class="border border-gray-200 bg-gray-50 text-gray-600 p-1.5 w-full italic cursor-not-allowed">
                             @else
-                                <input type="text" wire:model="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
+                                <input type="text" wire:model.live.debounce.300ms="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
                             @endif
                         </div>
                     @endforeach
