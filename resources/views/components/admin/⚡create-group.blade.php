@@ -1,5 +1,6 @@
 <?php
 
+use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use App\Models\ItemBase;
@@ -77,54 +78,66 @@ new #[Layout('components.layouts.admin')] class extends Component {
             'description' => 'nullable|string',
         ]);
 
-        $filteredSchema = array_values(array_filter($this->schema, function ($row) {
-            return !empty(trim($row['name'] ?? ''));
-        }));
+        try {
+            DB::transaction(function () use ($ignoreId) {
 
-        $jsonAttributes = [
-            'is_sellable' => $this->is_sellable ? 1 : 0,
-            'child_schema' => $filteredSchema,
-        ];
+                $filteredSchema = array_values(array_filter($this->schema, function ($row) {
+                    return !empty(trim($row['name'] ?? ''));
+                }));
 
-        $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
 
-        if ($this->group) {
-            $this->group->update([
-                'base_title' => $this->base_title,
-                'slug' => $slug,
-                'description' => $this->description,
-            ]);
+                $jsonAttributes = [
+                    'is_sellable' => $this->is_sellable ? 1 : 0,
+                    'child_schema' => $filteredSchema,
+                ];
 
-            $this->group->variants()->first()->update([
-                'title' => $this->base_title,
-                'json_attributes' => $jsonAttributes,
-            ]);
+                $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
 
-            $this->group->describedBy()->sync($this->descriptor_groups);
-            
-            $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
-        } else {
-            $base = ItemBase::create([
-                'base_title' => $this->base_title,
-                'slug' => $slug,
-                'description' => $this->description,
-                'parent_id' => null,
-                'base_price' => 0,
-            ]);
+                if ($this->group) {
+                    $this->group->update([
+                        'base_title' => $this->base_title,
+                        'slug' => $slug,
+                        'description' => $this->description,
+                    ]);
 
-            $base->variants()->create([
-                'title' => $this->base_title,
-                'price' => 0,
-                'quantity' => 0,
-                'json_attributes' => $jsonAttributes,
-            ]);
+                    $this->group->variants()->first()->update([
+                        'title' => $this->base_title,
+                        'json_attributes' => $jsonAttributes,
+                    ]);
 
-            if (!empty($this->descriptor_groups)) {
-                $base->describedBy()->sync($this->descriptor_groups);
-            }
-            
+                    $this->group->describedBy()->sync($this->descriptor_groups);
+                    
+                    $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
+                } else 
+                {
+                    $base = ItemBase::create([
+                        'base_title' => $this->base_title,
+                        'slug' => $slug,
+                        'description' => $this->description,
+                        'parent_id' => null,
+                        'base_price' => 0,
+                    ]);
+
+                    $base->variants()->create([
+                        'title' => $this->base_title,
+                        'price' => 0,
+                        'quantity' => 0,
+                        'json_attributes' => $jsonAttributes,
+                    ]);
+
+                    if (!empty($this->descriptor_groups)) {
+                        $base->describedBy()->sync($this->descriptor_groups);
+                    }
+                    
+                }
+            });
             $this->redirect('/admin', navigate: true);
+
+        } catch (\Exception $e) {
+            $this->addError('form_error', 'Failed to save: ' . $e->getMessage());
         }
+            
+        
     }
 
     public function with()
@@ -141,6 +154,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
 <div class="max-w-xl">
     <h1 class="text-lg font-medium mb-4">{{ $group ? 'Edit' : 'Create' }} Item Group</h1>
+
+    @error('form_error')
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">
+            {{ $message }}
+        </div>
+    @enderror
 
     <form wire:submit="save" class="flex flex-col gap-4">
         <div class="flex flex-col gap-2 text-sm">
@@ -177,12 +196,16 @@ new #[Layout('components.layouts.admin')] class extends Component {
                 @foreach($schema as $index => $row)
                     <div class="flex gap-2 items-center text-sm">
                         <input type="text" wire:model="schema.{{ $index }}.name" placeholder="Name" class="border border-gray-300 p-1 flex-1">
+                        
                         <select wire:model="schema.{{ $index }}.type" class="border border-gray-300 p-1">
                             <option value="string">String</option>
                             <option value="int">Integer</option>
                             <option value="boolean">Boolean</option>
+                            <option value="expression">Expression (Math)</option>
                         </select>
-                        <input type="text" wire:model="schema.{{ $index }}.default" placeholder="Default" class="border border-gray-300 p-1 flex-1">
+                        <input type="text" wire:model="schema.{{ $index }}.default" placeholder="Default / Formula" class="border border-gray-300 p-1 flex-1">
+
+
                         <button type="button" wire:click="removeSchemaRow({{ $index }})" class="text-red-600 text-xs px-1">Remove</button>
                     </div>
                 @endforeach

@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use App\Models\ItemBase;
@@ -108,46 +110,67 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         $this->validate($rules);
 
-        $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
+        try {
+            DB::transaction(function () use ($ignoreId) {
+                // Process Expressions
+                $expressionLanguage = new ExpressionLanguage();
+                foreach ($this->schema as $field) {
+                    if ($field['type'] === 'expression') {
+                        $this->json_data[$field['name']] = $expressionLanguage->evaluate($field['default'], $this->json_data);
+                    }
+                }
 
-        $baseData = [
-            'base_title' => $this->base_title,
-            'slug' => $slug,
-            'description' => $this->description,
-            'base_price' => $this->is_sellable ? $this->base_price : 0,
-            'base_status' => (bool) $this->base_status,
-        ];
+                $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
 
-        $variantData = [
-            'title' => $this->base_title,
-            'price' => $this->is_sellable ? $this->base_price : 0,
-            'status' => (bool) $this->base_status,
-            'sku' => $this->is_sellable ? $this->sku : null,
-            'quantity' => $this->is_sellable ? $this->quantity : 0,
-            'json_attributes' => !empty($this->schema) ? $this->json_data : null,
-        ];
+                $baseData = [
+                    'base_title' => $this->base_title,
+                    'slug' => $slug,
+                    'description' => $this->description,
+                    'base_price' => $this->is_sellable ? $this->base_price : 0,
+                    'base_status' => (bool) $this->base_status,
+                ];
 
-        if ($this->item) {
-            $this->item->update($baseData);
-            $this->item->variants()->first()->update($variantData);
-            $this->item->describedBy()->sync($this->selected_descriptors);
-        } else {
-            $baseData['parent_id'] = $this->parentGroup->id;
-            $this->item = ItemBase::create($baseData);
-            $this->item->variants()->create($variantData);
-            
-            if (!empty($this->selected_descriptors)) {
-                $this->item->describedBy()->sync($this->selected_descriptors);
-            }
+                $variantData = [
+                    'title' => $this->base_title,
+                    'price' => $this->is_sellable ? $this->base_price : 0,
+                    'status' => (bool) $this->base_status,
+                    'sku' => $this->is_sellable ? $this->sku : null,
+                    'quantity' => $this->is_sellable ? $this->quantity : 0,
+                    'json_attributes' => !empty($this->schema) ? $this->json_data : null,
+                ];
+
+                if ($this->item) {
+                    $this->item->update($baseData);
+                    $this->item->variants()->first()->update($variantData);
+                    $this->item->describedBy()->sync($this->selected_descriptors);
+                } else {
+                    $baseData['parent_id'] = $this->parentGroup->id;
+                    $this->item = ItemBase::create($baseData);
+                    $this->item->variants()->create($variantData);
+                    
+                    if (!empty($this->selected_descriptors)) {
+                        $this->item->describedBy()->sync($this->selected_descriptors);
+                    }
+                }
+            });
+
+            $this->redirect('/admin/groups/' . $this->parentGroup->id, navigate: true);
+
+        } catch (\Exception $e) {
+            $this->addError('form_error', 'Failed to save: ' . $e->getMessage());
         }
-
-        $this->redirect('/admin/groups/' . $this->parentGroup->id, navigate: true);
     }
 }; 
 ?>
 
 <div class="max-w-xl">
     <h1 class="text-lg font-medium mb-4">{{ $item ? 'Edit' : 'Create' }} {{ $parentGroup->base_title }} Item</h1>
+
+    @error('form_error')
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">
+            {{ $message }}
+        </div>
+    @enderror
 
     <form wire:submit="save" class="flex flex-col gap-4 text-sm">
         <div class="flex flex-col gap-2">
@@ -188,12 +211,15 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     @foreach($schema as $field)
                         <div>
                             <label class="block mb-1 capitalize text-xs text-gray-600">{{ $field['name'] }}</label>
+                            
                             @if($field['type'] === 'int')
                                 <input type="number" wire:model="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
                             @elseif($field['type'] === 'boolean')
                                 <label class="flex items-center gap-1.5 mt-2">
                                     <input type="checkbox" wire:model="json_data.{{ $field['name'] }}"> Yes
                                 </label>
+                            @elseif($field['type'] === 'expression')
+                                <input type="text" disabled value="Calculated on save: {{ $field['default'] }}" class="border border-gray-200 bg-gray-50 text-gray-400 p-1.5 w-full italic cursor-not-allowed">
                             @else
                                 <input type="text" wire:model="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
                             @endif
