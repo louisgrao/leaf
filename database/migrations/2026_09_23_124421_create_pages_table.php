@@ -24,7 +24,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
-            $table->boolean('status')->default(true);
+            $table->string('status')->default('Published');
             $table->boolean('is_sellable')->default(true); // Added dedicated column
             $table->json('json_specifications')->nullable();
             $table->softDeletes();

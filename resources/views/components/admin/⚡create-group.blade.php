@@ -14,24 +14,42 @@ new #[Layout('components.layouts.admin')] class extends Component {
     public $status = true;
     public $is_sellable = 1;
 
+    // Optional Sellable Fields Config
+    public $has_sku = 1;
+    public $has_barcode = 0;
+    public $has_compare_at_price = 0;
+    public $has_cost_price = 0;
+    public $has_commission_rate = 0;
+    public $has_supplier_id = 0;
+    public $has_shipping_weight = 0;
+    public $has_shipping_dimensions = 0;
+
     public $schema = [];
     public $descriptor_groups = [];
 
     public function mount($id = null)
     {
         if ($id) {
-            $this->group = ItemBase::with(['variants', 'describedBy'])->findOrFail($id);
+            $this->group = ItemBase::with(['describedBy'])->findOrFail($id);
             
             $this->name = $this->group->name;
             $this->description = $this->group->description;
             $this->status = $this->group->status;
+            $this->is_sellable = (int) $this->group->is_sellable;
 
-            $variant = $this->group->variants->first();
-            $config = $variant->json_specifications ?? [];
+            $config = $this->group->json_specifications ?? [];
+            $sellableConfig = $config['sellable_fields'] ?? [];
 
-            $this->is_sellable = (int) ($config['is_sellable'] ?? 1);
+            $this->has_sku = (int) ($sellableConfig['has_sku'] ?? 1);
+            $this->has_barcode = (int) ($sellableConfig['has_barcode'] ?? 0);
+            $this->has_compare_at_price = (int) ($sellableConfig['has_compare_at_price'] ?? 0);
+            $this->has_cost_price = (int) ($sellableConfig['has_cost_price'] ?? 0);
+            $this->has_commission_rate = (int) ($sellableConfig['has_commission_rate'] ?? 0);
+            $this->has_supplier_id = (int) ($sellableConfig['has_supplier_id'] ?? 0);
+            $this->has_shipping_weight = (int) ($sellableConfig['has_shipping_weight'] ?? 0);
+            $this->has_shipping_dimensions = (int) ($sellableConfig['has_shipping_dimensions'] ?? 0);
+            
             $this->schema = $config['child_schema'] ?? [];
-
             $this->descriptor_groups = $this->group->describedBy->pluck('id')->toArray();
         }
     }
@@ -79,6 +97,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
             'name' => 'required|string',
             'description' => 'nullable|string',
             'status' => 'boolean',
+            'is_sellable' => 'boolean',
         ]);
 
         $filteredSchema = array_values(array_filter($this->schema, function ($row) {
@@ -88,14 +107,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
         $expressionLanguage = new ExpressionLanguage();
         $availableVars = [];
 
-        // 1st Pass: Collect all valid variables globally from the schema
         foreach ($filteredSchema as $field) {
             if (in_array($field['type'], ['int', 'boolean']) && !empty(trim($field['name']))) {
                 $availableVars[] = $field['name'];
             }
         }
 
-        // 2nd Pass: Validate defaults and expressions
         foreach ($filteredSchema as $index => $field) {
             if ($field['type'] === 'int' && $field['default'] !== '' && !is_numeric($field['default'])) {
                 $this->addError("schema.{$index}.default", "Default value for '{$field['name']}' must be a number.");
@@ -119,43 +136,39 @@ new #[Layout('components.layouts.admin')] class extends Component {
         try {
             DB::transaction(function () use ($ignoreId, $filteredSchema) {
                 $jsonSpecifications = [
-                    'is_sellable' => $this->is_sellable ? 1 : 0,
                     'child_schema' => $filteredSchema,
+                    'sellable_fields' => $this->is_sellable ? [
+                        'has_sku' => $this->has_sku ? 1 : 0,
+                        'has_barcode' => $this->has_barcode ? 1 : 0,
+                        'has_compare_at_price' => $this->has_compare_at_price ? 1 : 0,
+                        'has_cost_price' => $this->has_cost_price ? 1 : 0,
+                        'has_commission_rate' => $this->has_commission_rate ? 1 : 0,
+                        'has_supplier_id' => $this->has_supplier_id ? 1 : 0,
+                        'has_shipping_weight' => $this->has_shipping_weight ? 1 : 0,
+                        'has_shipping_dimensions' => $this->has_shipping_dimensions ? 1 : 0,
+                    ] : null,
                 ];
 
                 $slug = $this->generateUniqueSlug($this->name, $ignoreId);
 
+                $baseData = [
+                    'name' => $this->name,
+                    'slug' => $slug,
+                    'description' => $this->description,
+                    'status' => (bool) $this->status,
+                    'is_sellable' => (bool) $this->is_sellable,
+                    'json_specifications' => $jsonSpecifications,
+                ];
+
                 if ($this->group) {
-                    $this->group->update([
-                        'name' => $this->name,
-                        'slug' => $slug,
-                        'description' => $this->description,
-                        'status' => (bool) $this->status,
-                    ]);
-
-                    $this->group->variants()->first()->update([
-                        'status' => (bool) $this->status,
-                        'json_specifications' => $jsonSpecifications,
-                    ]);
-
+                    $this->group->update($baseData);
                     $this->group->describedBy()->sync($this->descriptor_groups);
-                    
                     $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
                 } else {
-                    $base = ItemBase::create([
-                        'name' => $this->name,
-                        'slug' => $slug,
-                        'description' => $this->description,
-                        'status' => (bool) $this->status,
-                        'parent_id' => null,
-                    ]);
-
-                    $base->variants()->create([
-                        'status' => (bool) $this->status,
-                        'sort_order' => 0,
-                        'json_specifications' => $jsonSpecifications,
-                    ]);
-
+                    $baseData['parent_id'] = null;
+                    
+                    $base = ItemBase::create($baseData);
+                    
                     if (!empty($this->descriptor_groups)) {
                         $base->describedBy()->sync($this->descriptor_groups);
                     }
@@ -205,12 +218,50 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         <div class="border-t pt-4">
             <h2 class="text-sm font-medium mb-2">Group Type</h2>
-            <div class="flex gap-4 text-sm">
+            <div class="flex gap-4 text-sm mb-4">
                 <label class="flex items-center gap-1.5">
-                    <input type="checkbox" wire:model="is_sellable" value="1"> 
-                    Sellable Items (Enables Price, SKU, and Quantity for children)
+                    <input type="checkbox" wire:model.live="is_sellable" value="1"> 
+                    Sellable Items (Enables purchasing attributes for children)
                 </label>
             </div>
+
+            @if($is_sellable)
+                <div class="p-3 bg-gray-50 border border-gray-200 text-sm">
+                    <p class="mb-3 text-gray-600">Select the commercial fields required for items in this group. Price and Quantity are always required.</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center gap-1.5 text-gray-400">
+                            <input type="checkbox" checked disabled> Price
+                        </label>
+                        <label class="flex items-center gap-1.5 text-gray-400">
+                            <input type="checkbox" checked disabled> Quantity
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_sku" value="1"> SKU
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_barcode" value="1"> Barcode
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_compare_at_price" value="1"> Compare at Price
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_cost_price" value="1"> Cost Price
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_commission_rate" value="1"> Commission Rate
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_supplier_id" value="1"> Supplier ID
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_shipping_weight" value="1"> Shipping Weight
+                        </label>
+                        <label class="flex items-center gap-1.5">
+                            <input type="checkbox" wire:model="has_shipping_dimensions" value="1"> Shipping Dimensions
+                        </label>
+                    </div>
+                </div>
+            @endif
         </div>
 
         <div class="border-t pt-4">
