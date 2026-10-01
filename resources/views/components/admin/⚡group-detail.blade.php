@@ -17,7 +17,6 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
     public function mount($id)
     {
-        // Load the group along with the descriptor groups it allows
         $this->group = ItemBase::with(['describedBy'])->where('id', $id)->whereNull('parent_id')->firstOrFail();
         
         $this->is_sellable = (bool) $this->group->is_sellable;
@@ -27,9 +26,14 @@ new #[Layout('components.layouts.admin')] class extends Component {
         
         $this->has_sku = (bool) ($sellableConfig['has_sku'] ?? 1);
         $this->schema = $config['child_schema'] ?? [];
-        
-        // Store the allowed descriptor groups for table headers
         $this->descriptorGroups = $this->group->describedBy;
+
+        $this->statusFilter = session()->get("group_{$id}_status_filter", 'Published');
+    }
+
+    public function updatedStatusFilter($value)
+    {
+        session()->put("group_{$this->group->id}_status_filter", $value);
     }
 
     public function with()
@@ -91,80 +95,78 @@ new #[Layout('components.layouts.admin')] class extends Component {
         <table class="w-full text-left border-collapse whitespace-nowrap">
             <thead>
                 <tr class="border-b border-gray-200 bg-gray-50">
-                    <!-- Priority 1: Always visible -->
-                    <th class="p-3 font-medium text-gray-600">Item Name</th>
+                    <!-- Always visible -->
+                    <th class="p-3 font-medium text-gray-600">Name</th>
                     
+                    <!-- Priority 2: Hidden until MD -->
                     @if($is_sellable)
-                        <!-- Priority 4 & 5: Hidden on small screens -->
+                        @if($has_sku)
+                            <th class="hidden md:table-cell p-3 font-medium text-gray-600">SKU</th>
+                        @endif
                         <th class="hidden md:table-cell p-3 font-medium text-gray-600">Price</th>
                         <th class="hidden md:table-cell p-3 font-medium text-gray-600">Quantity</th>
-                        
-                        @if($has_sku)
-                            <!-- Priority 6: Hidden on medium screens -->
-                            <th class="hidden lg:table-cell p-3 font-medium text-gray-600">SKU</th>
-                        @endif
                     @endif
                     
                     @if($descriptorGroups->isNotEmpty())
-                        <!-- Priority 7 (Collapsed): Visible on XL, hidden on 2XL -->
-                        <th class="hidden xl:table-cell 2xl:hidden p-3 font-medium text-gray-600">Descriptors</th>
+                        <!-- Priority 3(Collapsed): Visible on LG, hidden on XL -->
+                        <th class="hidden lg:table-cell xl:hidden p-3 font-medium text-gray-600">Descriptors</th>
                         
-                        <!-- Priority 7 (Expanded): Hidden until 2XL -->
+                        <!-- Priority 4 (Expanded): Hidden until XL -->
                         @foreach($descriptorGroups as $descGroup)
-                            <th class="hidden 2xl:table-cell p-3 font-medium text-gray-600">{{ $descGroup->name }}</th>
+                            <th class="hidden xl:table-cell p-3 font-medium text-gray-600">{{ $descGroup->name }}</th>
                         @endforeach
                     @endif
 
-                    <!-- Priority 8: Hidden until 2XL screens -->
+                    <!-- Priority 5: Hidden until 2XL -->
                     @foreach($schema as $field)
                         <th class="hidden 2xl:table-cell p-3 font-medium text-gray-600 capitalize">{{ $field['name'] }}</th>
                     @endforeach
-                    
-                    @if($is_sellable)
-                        <!-- Priority 3: Hidden on extra-small mobile only -->
-                        <th class="hidden sm:table-cell p-3 font-medium text-gray-600">Purchase Status</th>
-                    @endif
 
-                    <!-- Priority 2: Always visible -->
-                    <th class="p-3 font-medium text-gray-600">Visible Status</th>
+                    <!-- Always visible -->
+                    <th class="p-3 font-medium text-gray-600">Status</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($children as $child)
                     <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        @php $variant = $child->variants->first(); @endphp
+                        
+                        <!-- Always visible -->
                         <td class="p-3 text-blue-600">
                             <a href="/admin/items/{{ $child->id }}/edit" wire:navigate class="hover:underline">{{ $child->name }}</a>
                         </td>
-                        
+
+                        <!-- Priority 2: Hidden until MD -->                        
                         @if($is_sellable)
-                            @php $variant = $child->variants->first(); @endphp
+                            @if($has_sku)
+                                <td class="hidden md:table-cell p-3 text-gray-600">
+                                    {{ $variant?->sku ?? '-' }}
+                                </td>
+                            @endif
                             <td class="hidden md:table-cell p-3 text-gray-600">
                                 {{ $variant?->price !== null ? number_format($variant->price, 2) : '-' }}
                             </td>
                             <td class="hidden md:table-cell p-3 text-gray-600">
                                 {{ $variant?->quantity ?? 0 }}
                             </td>
-                            @if($has_sku)
-                                <td class="hidden lg:table-cell p-3 text-gray-600">
-                                    {{ $variant?->sku ?? '-' }}
-                                </td>
-                            @endif
+                            
                         @endif
 
                         @if($descriptorGroups->isNotEmpty())
-                            <!-- Collapsed Descriptors -->
-                            <td class="hidden xl:table-cell 2xl:hidden p-3 text-gray-500 text-sm truncate max-w-[200px]">
+                            <!-- Priority 3(Collapsed): Visible on LG, hidden on XL -->
+                            <td class="hidden lg:table-cell xl:hidden p-3 text-gray-500 text-sm truncate max-w-[200px]">
                                 {{ $child->describedBy->pluck('name')->join(', ') ?: '-' }}
                             </td>
                             
-                            <!-- Expanded Descriptors -->
+                            <!-- Priority 4 (Expanded): Hidden until XL -->
                             @foreach($descriptorGroups as $descGroup)
-                                <td class="hidden 2xl:table-cell p-3 text-gray-600 text-sm">
+                                <td class="hidden xl:table-cell p-3 text-gray-600 text-sm">
                                     {{ $child->describedBy->where('parent_id', $descGroup->id)->pluck('name')->join(', ') ?: '-' }}
                                 </td>
                             @endforeach
                         @endif
 
+                        <!-- Priority 5: Hidden until 2XL -->
                         @foreach($schema as $field)
                             <td class="hidden 2xl:table-cell p-3 text-gray-600">
                                 @if($field['type'] === 'boolean')
@@ -175,21 +177,23 @@ new #[Layout('components.layouts.admin')] class extends Component {
                             </td>
                         @endforeach
                         
-                        @if($is_sellable)
-                            <td class="hidden sm:table-cell p-3">
-                                <span class="text-xs {{ $variant?->status ? 'text-green-600' : 'text-gray-400' }}">
-                                    {{ $variant?->status ? 'Active' : 'Disabled' }}
-                                </span>
-                            </td>
-                        @endif
-
+                        <!-- Always visible -->
                         <td class="p-3">
-                            <span class="px-2 py-1 text-xs rounded border 
-                                {{ $child->status === 'Published' ? 'bg-green-50 text-green-700 border-green-200' : 
-                                  ($child->status === 'Draft' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 
-                                  'bg-slate-50 text-slate-600 border-slate-200') }}">
-                                {{ $child->status }}
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <span title="Visibility: {{ $child->status }}" 
+                                      class="flex-shrink-0 w-3 h-3 rounded-full 
+                                      {{ $child->status === 'Published' ? 'bg-green-500' : ($child->status === 'Draft' ? 'bg-yellow-400' : 'bg-gray-400') }}">
+                                </span>
+
+                                @if($child->status === 'Published')
+                                    <span class="text-gray-300">|</span>
+                                    
+                                    <span title="Interaction: {{ $variant?->status ? 'Active' : 'Disabled' }}"
+                                          class="flex-shrink-0 w-3 h-3 rounded-full border-[2px] bg-transparent 
+                                          {{ $variant?->status ? 'border-green-500' : 'border-gray-400' }}">
+                                    </span>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty

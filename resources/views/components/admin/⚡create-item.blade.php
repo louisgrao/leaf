@@ -255,13 +255,20 @@ new #[Layout('components.layouts.admin')] class extends Component {
     @enderror
 
     <form wire:submit="save" class="flex flex-col gap-6 text-sm">
-        
+
         <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
-            <h2 class="font-medium text-gray-700">Core Details</h2>
+            <div class="flex justify-between items-center">
+                <h2 class="font-medium text-gray-700">Core Details</h2>
+                <label class="flex items-center gap-1.5">
+                    <input type="checkbox" wire:model="variant_status"> Interactive (Active)
+                </label>
+            </div>
+            
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block mb-1">Name</label>
                     <input type="text" wire:model="name" class="border border-gray-300 p-1.5 w-full bg-white">
+                    @error('name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
                     <label class="block mb-1">Visibility Status</label>
@@ -270,12 +277,14 @@ new #[Layout('components.layouts.admin')] class extends Component {
                         <option value="Draft">Draft</option>
                         <option value="Archived">Archived</option>
                     </select>
+                    @error('status') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                 </div>
             </div>
 
             <div>
                 <label class="block mb-1">Description</label>
                 <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5 w-full bg-white"></textarea>
+                @error('description') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
             </div>
         </div>
 
@@ -305,12 +314,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         @if($is_sellable)
             <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
-                <div class="flex justify-between items-center">
-                    <h2 class="font-medium text-gray-700">Variant Settings & Commercials</h2>
-                    <label class="flex items-center gap-1.5">
-                        <input type="checkbox" wire:model="variant_status"> Active for Purchase
-                    </label>
-                </div>
+                <h2 class="font-medium text-gray-700">Commercial Settings</h2>
                 
                 <div class="grid grid-cols-3 gap-4">
                     <div>
