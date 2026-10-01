@@ -3,14 +3,18 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ItemBase extends Model
 {
+    use SoftDeletes;
+
     protected $guarded = [];
 
     protected $casts = [
-        'base_status' => 'boolean',
-        'base_price' => 'decimal:2',
+        'status' => 'boolean',
+        'is_sellable' => 'boolean',
+        'json_specifications' => 'array',
     ];
 
     public function parent()

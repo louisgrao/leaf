@@ -16,27 +16,42 @@ return new class extends Migration
             $table->string('title');
             $table->string('slug')->unique();
             $table->timestamps();
+        });
 
         Schema::create('item_bases', function (Blueprint $table) {
             $table->id();
             $table->foreignId('parent_id')->nullable()->constrained('item_bases')->nullOnDelete();
-            $table->string('base_title');
+            $table->string('name');
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
-            $table->decimal('base_price', 10, 2)->default(0);
-            $table->boolean('base_status')->default(true);
+            $table->boolean('status')->default(true);
+            $table->boolean('is_sellable')->default(true); // Added dedicated column
+            $table->json('json_specifications')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
 
         Schema::create('item_variants', function (Blueprint $table) {
             $table->id();
             $table->foreignId('item_base_id')->constrained('item_bases')->cascadeOnDelete();
-            $table->string('title');
-            $table->string('sku')->unique()->nullable();
-            $table->decimal('price', 10, 2)->nullable();
-            $table->integer('quantity')->default(0);
             $table->boolean('status')->default(true);
-            $table->json('json_attributes')->nullable();
+            $table->integer('sort_order')->default(0);
+            $table->json('json_specifications')->nullable();
+            $table->json('json_options')->nullable();
+            
+            // Sellable properties
+            $table->string('sku')->unique()->nullable();
+            $table->string('barcode')->nullable();
+            $table->decimal('price', 10, 2)->nullable();
+            $table->decimal('compare_at_price', 10, 2)->nullable();
+            $table->decimal('cost_price', 10, 2)->nullable();
+            $table->decimal('commission_rate', 5, 2)->nullable();
+            $table->unsignedBigInteger('supplier_id')->nullable();
+            $table->integer('quantity')->default(0);
+            $table->decimal('shipping_weight', 8, 2)->nullable();
+            $table->json('shipping_dimensions')->nullable();
+            
+            $table->softDeletes();
             $table->timestamps();
         });
 
@@ -48,7 +63,7 @@ return new class extends Migration
             
             $table->unique(['primary_item_id', 'secondary_item_id']);
         });
-});
+    
     }
 
     /**
@@ -56,6 +71,9 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('item_item');
+        Schema::dropIfExists('item_variants');
+        Schema::dropIfExists('item_bases');
         Schema::dropIfExists('pages');
     }
 };

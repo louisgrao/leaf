@@ -161,7 +161,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     'base_price' => $this->is_sellable ? $this->base_price : 0,
                     'base_status' => (bool) $this->base_status,
                 ];
-
+                
                 $variantData = [
                     'title' => $this->base_title,
                     'price' => $this->is_sellable ? $this->base_price : 0,

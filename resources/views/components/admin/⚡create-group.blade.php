@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -8,9 +9,9 @@ use App\Models\ItemBase;
 new #[Layout('components.layouts.admin')] class extends Component {
     public ?ItemBase $group = null;
 
-    public $base_title = '';
+    public $name = '';
     public $description = '';
-
+    public $status = true;
     public $is_sellable = 1;
 
     public $schema = [];
@@ -21,11 +22,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
         if ($id) {
             $this->group = ItemBase::with(['variants', 'describedBy'])->findOrFail($id);
             
-            $this->base_title = $this->group->base_title;
+            $this->name = $this->group->name;
             $this->description = $this->group->description;
+            $this->status = $this->group->status;
 
             $variant = $this->group->variants->first();
-            $config = $variant->json_attributes ?? [];
+            $config = $variant->json_specifications ?? [];
 
             $this->is_sellable = (int) ($config['is_sellable'] ?? 1);
             $this->schema = $config['child_schema'] ?? [];
@@ -68,14 +70,15 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         return $slug;
     }
-    
+
     public function save()
     {
         $ignoreId = $this->group ? $this->group->id : null;
         
         $this->validate([
-            'base_title' => 'required|string',
+            'name' => 'required|string',
             'description' => 'nullable|string',
+            'status' => 'boolean',
         ]);
 
         $filteredSchema = array_values(array_filter($this->schema, function ($row) {
@@ -112,55 +115,54 @@ new #[Layout('components.layouts.admin')] class extends Component {
                 }
             }
         }
-        // 2. Database Transaction
+
         try {
             DB::transaction(function () use ($ignoreId, $filteredSchema) {
-                $jsonAttributes = [
+                $jsonSpecifications = [
                     'is_sellable' => $this->is_sellable ? 1 : 0,
                     'child_schema' => $filteredSchema,
                 ];
 
-                $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
+                $slug = $this->generateUniqueSlug($this->name, $ignoreId);
 
                 if ($this->group) {
                     $this->group->update([
-                        'base_title' => $this->base_title,
+                        'name' => $this->name,
                         'slug' => $slug,
                         'description' => $this->description,
+                        'status' => (bool) $this->status,
                     ]);
 
                     $this->group->variants()->first()->update([
-                        'title' => $this->base_title,
-                        'json_attributes' => $jsonAttributes,
+                        'status' => (bool) $this->status,
+                        'json_specifications' => $jsonSpecifications,
                     ]);
 
                     $this->group->describedBy()->sync($this->descriptor_groups);
+                    
+                    $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
                 } else {
                     $base = ItemBase::create([
-                        'base_title' => $this->base_title,
+                        'name' => $this->name,
                         'slug' => $slug,
                         'description' => $this->description,
+                        'status' => (bool) $this->status,
                         'parent_id' => null,
-                        'base_price' => 0,
                     ]);
 
                     $base->variants()->create([
-                        'title' => $this->base_title,
-                        'price' => 0,
-                        'quantity' => 0,
-                        'json_attributes' => $jsonAttributes,
+                        'status' => (bool) $this->status,
+                        'sort_order' => 0,
+                        'json_specifications' => $jsonSpecifications,
                     ]);
 
                     if (!empty($this->descriptor_groups)) {
                         $base->describedBy()->sync($this->descriptor_groups);
                     }
                     
-                    // Reassign to property to route properly below
-                    $this->group = $base;
+                    $this->redirect('/admin', navigate: true);
                 }
             });
-
-            $this->redirect('/admin/groups/' . $this->group->id, navigate: true);
 
         } catch (\Exception $e) {
             $this->addError('form_error', 'Failed to save: ' . $e->getMessage());
@@ -190,11 +192,15 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
     <form wire:submit="save" class="flex flex-col gap-4">
         <div class="flex flex-col gap-2 text-sm">
-            <label>Title</label>
-            <input type="text" wire:model="base_title" class="border border-gray-300 p-1.5">
+            <label>Name</label>
+            <input type="text" wire:model="name" class="border border-gray-300 p-1.5">
 
             <label>Description</label>
             <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5"></textarea>
+
+            <label class="flex items-center gap-1.5 mt-1">
+                <input type="checkbox" wire:model="status"> Active
+            </label>
         </div>
 
         <div class="border-t pt-4">
@@ -209,7 +215,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         <div class="border-t pt-4">
             <div class="flex justify-between items-center mb-2">
-                <h2 class="text-sm font-medium">Child Custom JSON Attributes</h2>
+                <h2 class="text-sm font-medium">Child Custom Specifications</h2>
                 <button type="button" wire:click="addSchemaRow" class="text-xs border px-2 py-1 bg-gray-50 hover:bg-gray-100">
                     + Add Attribute
                 </button>
@@ -231,7 +237,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                                 <option value="boolean">Boolean</option>
                                 <option value="expression">Expression (Math)</option>
                             </select>
-
+                            
                             @if($schema[$index]['type'] === 'expression')
                                 @php
                                     $validVars = collect($schema)
@@ -239,7 +245,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                                         ->pluck('name')->values()->toJson();
                                 @endphp
                                 <div wire:key="expr-{{ $index }}-{{ md5($validVars) }}" 
-                                    x-data="{
+                                     x-data="{
                                         text: @entangle('schema.'.$index.'.default').live,
                                         vars: {{ $validVars }},
                                         get highlighted() {
@@ -281,7 +287,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     @foreach($existingGroups as $groupOption)
                         <label class="flex items-center gap-1.5">
                             <input type="checkbox" wire:model="descriptor_groups" value="{{ $groupOption->id }}">
-                            {{ $groupOption->base_title }}
+                            {{ $groupOption->name }}
                         </label>
                     @endforeach
                 </div>

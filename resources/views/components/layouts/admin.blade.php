@@ -26,7 +26,7 @@
 
             @foreach(\App\Models\ItemBase::whereNull('parent_id')->get() as $group)
                 <a href="/admin/groups/{{ $group->id }}" wire:navigate class="hover:underline text-gray-300 pl-2 border-l-2 border-transparent hover:border-gray-500">
-                    {{ $group->base_title }}
+                    {{ $group->name }}
                 </a>
             @endforeach
 
