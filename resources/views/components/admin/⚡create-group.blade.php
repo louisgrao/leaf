@@ -11,10 +11,9 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
     public $name = '';
     public $description = '';
-    public $status = true;
-    public $is_sellable = 1;
+    public $status = 'Published';
+    public $is_sellable = 0;
 
-    // Optional Sellable Fields Config
     public $has_sku = 1;
     public $has_barcode = 0;
     public $has_compare_at_price = 0;
@@ -96,7 +95,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
         $this->validate([
             'name' => 'required|string',
             'description' => 'nullable|string',
-            'status' => 'boolean',
+            'status' => 'required|in:Published,Draft,Archived',
             'is_sellable' => 'boolean',
         ]);
 
@@ -155,7 +154,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     'name' => $this->name,
                     'slug' => $slug,
                     'description' => $this->description,
-                    'status' => (bool) $this->status,
+                    'status' => $this->status,
                     'is_sellable' => (bool) $this->is_sellable,
                     'json_specifications' => $jsonSpecifications,
                 ];
@@ -211,9 +210,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
             <label>Description</label>
             <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5"></textarea>
 
-            <label class="flex items-center gap-1.5 mt-1">
-                <input type="checkbox" wire:model="status"> Active
-            </label>
+            <label>Visibility Status</label>
+            <select wire:model="status" class="border border-gray-300 p-1.5 bg-white">
+                <option value="Published">Published</option>
+                <option value="Draft">Draft</option>
+                <option value="Archived">Archived</option>
+            </select>
         </div>
 
         <div class="border-t pt-4">

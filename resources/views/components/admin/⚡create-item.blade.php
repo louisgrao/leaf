@@ -12,17 +12,38 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
     public $is_sellable = 1;
 
-    public $base_title = '';
+    // Base Fields
+    public $name = '';
     public $description = '';
-    public $base_status = true;
+    public $status = 'Published';
+
+    // Variant Fields (Only standard properties for now)
+    public $variant_status = true;
     
-    // Sellable fields
-    public $base_price = 0;
-    public $sku = '';
+    // Sellable Variant Fields
+    public $price = null;
     public $quantity = 0;
+    public $sku = '';
+    public $barcode = '';
+    public $compare_at_price = null;
+    public $cost_price = null;
+    public $commission_rate = null;
+    public $supplier_id = null;
+    public $shipping_weight = null;
+    public $shipping_dimensions = ''; // Stored as simple string/JSON
+
+    // Progressive Disclosure Config
+    public $has_sku = 1;
+    public $has_barcode = 0;
+    public $has_compare_at_price = 0;
+    public $has_cost_price = 0;
+    public $has_commission_rate = 0;
+    public $has_supplier_id = 0;
+    public $has_shipping_weight = 0;
+    public $has_shipping_dimensions = 0;
 
     public $schema = [];
-    public $json_data = [];
+    public $json_specifications = [];
     public $allowedDescriptorGroups = [];
     public $selected_descriptors = [];
 
@@ -32,31 +53,49 @@ new #[Layout('components.layouts.admin')] class extends Component {
             $this->item = ItemBase::with(['variants', 'describedBy', 'parent'])->findOrFail($itemId);
             $this->parentGroup = $this->item->parent;
 
-            $this->base_title = $this->item->base_title;
+            $this->name = $this->item->name;
             $this->description = $this->item->description;
-            $this->base_status = $this->item->base_status;
-            $this->base_price = $this->item->base_price;
+            $this->status = $this->item->status;
+            $this->json_specifications = $this->item->json_specifications ?? [];
+            $this->selected_descriptors = $this->item->describedBy->pluck('id')->toArray();
 
             $variant = $this->item->variants->first();
-            $this->sku = $variant->sku;
+            $this->variant_status = $variant->status;
+            $this->price = $variant->price;
             $this->quantity = $variant->quantity;
-            $this->json_data = $variant->json_attributes ?? [];
-            $this->selected_descriptors = $this->item->describedBy->pluck('id')->toArray();
+            $this->sku = $variant->sku;
+            $this->barcode = $variant->barcode;
+            $this->compare_at_price = $variant->compare_at_price;
+            $this->cost_price = $variant->cost_price;
+            $this->commission_rate = $variant->commission_rate;
+            $this->supplier_id = $variant->supplier_id;
+            $this->shipping_weight = $variant->shipping_weight;
+            $this->shipping_dimensions = $variant->shipping_dimensions ? json_encode($variant->shipping_dimensions) : '';
         } else {
             $this->parentGroup = ItemBase::where('id', $groupId)->whereNull('parent_id')->firstOrFail();
         }
 
-        $parentVariant = $this->parentGroup->variants()->first();
-        $parentConfig = $parentVariant->json_attributes ?? [];
+        // FIX: Check the actual database column on the parent group, not the JSON config
+        $this->is_sellable = (bool) $this->parentGroup->is_sellable;
 
-        $this->is_sellable = (int) ($parentConfig['is_sellable'] ?? 1);
+        $parentConfig = $this->parentGroup->json_specifications ?? [];
         $this->schema = $parentConfig['child_schema'] ?? [];
 
+        $sellableConfig = $parentConfig['sellable_fields'] ?? [];
+        $this->has_sku = (int) ($sellableConfig['has_sku'] ?? 1);
+        $this->has_barcode = (int) ($sellableConfig['has_barcode'] ?? 0);
+        $this->has_compare_at_price = (int) ($sellableConfig['has_compare_at_price'] ?? 0);
+        $this->has_cost_price = (int) ($sellableConfig['has_cost_price'] ?? 0);
+        $this->has_commission_rate = (int) ($sellableConfig['has_commission_rate'] ?? 0);
+        $this->has_supplier_id = (int) ($sellableConfig['has_supplier_id'] ?? 0);
+        $this->has_shipping_weight = (int) ($sellableConfig['has_shipping_weight'] ?? 0);
+        $this->has_shipping_dimensions = (int) ($sellableConfig['has_shipping_dimensions'] ?? 0);
+
         foreach ($this->schema as $field) {
-            if (!array_key_exists($field['name'], $this->json_data)) {
-                $this->json_data[$field['name']] = $field['default'] ?? null;
+            if (!array_key_exists($field['name'], $this->json_specifications)) {
+                $this->json_specifications[$field['name']] = $field['default'] ?? null;
                 if ($field['type'] === 'boolean') {
-                    $this->json_data[$field['name']] = filter_var($field['default'], FILTER_VALIDATE_BOOLEAN);
+                    $this->json_specifications[$field['name']] = filter_var($field['default'], FILTER_VALIDATE_BOOLEAN);
                 }
             }
         }
@@ -72,32 +111,30 @@ new #[Layout('components.layouts.admin')] class extends Component {
     {
         $expressionLanguage = new ExpressionLanguage();
         
-        // 1. Sanitize inputs to prevent type errors and handle empty strings
         foreach ($this->schema as $field) {
             if ($field['type'] === 'int') {
-                if (!isset($this->json_data[$field['name']]) || trim((string)$this->json_data[$field['name']]) === '') {
-                    $this->json_data[$field['name']] = 0;
+                if (!isset($this->json_specifications[$field['name']]) || trim((string)$this->json_specifications[$field['name']]) === '') {
+                    $this->json_specifications[$field['name']] = 0;
                 } else {
-                    $this->json_data[$field['name']] = (int) $this->json_data[$field['name']];
+                    $this->json_specifications[$field['name']] = (int) $this->json_specifications[$field['name']];
                 }
             } elseif ($field['type'] === 'boolean') {
-                $this->json_data[$field['name']] = (bool) ($this->json_data[$field['name']] ?? false);
+                $this->json_specifications[$field['name']] = (bool) ($this->json_specifications[$field['name']] ?? false);
             }
         }
 
-        // 2. Evaluate expressions using sanitized data
         foreach ($this->schema as $field) {
             if ($field['type'] === 'expression') {
                 try {
-                    $this->json_data[$field['name']] = $expressionLanguage->evaluate($field['default'], $this->json_data);
+                    $this->json_specifications[$field['name']] = $expressionLanguage->evaluate($field['default'], $this->json_specifications);
                 } catch (\Exception $e) {
-                    $this->json_data[$field['name']] = 'Error: Missing or invalid variables';
+                    $this->json_specifications[$field['name']] = 'Error: Missing or invalid variables';
                 }
             }
         }
     }
 
-    public function updatedJsonData()
+    public function updatedJsonSpecifications()
     {
         $this->calculateExpressions();
     }
@@ -110,15 +147,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
         while (true) {
             $query = ItemBase::where('slug', $slug);
-            
             if ($ignoreId) {
                 $query->where('id', '!=', $ignoreId);
             }
-            
             if (!$query->exists()) {
                 break;
             }
-
             $slug = $originalSlug . '-' . $count;
             $count++;
         }
@@ -131,44 +165,60 @@ new #[Layout('components.layouts.admin')] class extends Component {
         $ignoreId = $this->item ? $this->item->id : null;
         
         $rules = [
-            'base_title' => 'required|string',
+            'name' => 'required|string',
             'description' => 'nullable|string',
-            'base_status' => 'boolean',
+            'status' => 'required|in:Published,Draft,Archived',
+            'variant_status' => 'boolean',
         ];
 
         if ($this->is_sellable) {
-            $rules['base_price'] = 'required|numeric|min:0';
-            $rules['quantity'] = 'required|integer|min:0';
+            // FIX: Allow price and quantity to be left completely blank by the user
+            $rules['price'] = 'nullable|numeric|min:0';
+            $rules['quantity'] = 'nullable|integer|min:0';
             
             $ignoreVariantId = $this->item ? $this->item->variants->first()->id : 'NULL';
-            $rules['sku'] = "nullable|string|unique:item_variants,sku,{$ignoreVariantId}";
+            
+            if ($this->has_sku) $rules['sku'] = "nullable|string|unique:item_variants,sku,{$ignoreVariantId}";
+            if ($this->has_barcode) $rules['barcode'] = "nullable|string";
+            if ($this->has_compare_at_price) $rules['compare_at_price'] = 'nullable|numeric|min:0';
+            if ($this->has_cost_price) $rules['cost_price'] = 'nullable|numeric|min:0';
+            if ($this->has_commission_rate) $rules['commission_rate'] = 'nullable|numeric|min:0|max:100';
+            if ($this->has_supplier_id) $rules['supplier_id'] = 'nullable|integer';
+            if ($this->has_shipping_weight) $rules['shipping_weight'] = 'nullable|numeric|min:0';
+            if ($this->has_shipping_dimensions) $rules['shipping_dimensions'] = 'nullable|string';
         }
 
         $this->validate($rules);
 
         try {
             DB::transaction(function () use ($ignoreId) {
-                
-                // Final calculation pass to guarantee defaults are applied before saving
                 $this->calculateExpressions();
-
-                $slug = $this->generateUniqueSlug($this->base_title, $ignoreId);
+                $slug = $this->generateUniqueSlug($this->name, $ignoreId);
 
                 $baseData = [
-                    'base_title' => $this->base_title,
+                    'name' => $this->name,
                     'slug' => $slug,
                     'description' => $this->description,
-                    'base_price' => $this->is_sellable ? $this->base_price : 0,
-                    'base_status' => (bool) $this->base_status,
+                    'status' => $this->status,
+                    'is_sellable' => (bool) $this->is_sellable,
+                    'json_specifications' => !empty($this->schema) ? $this->json_specifications : null,
                 ];
-                
+
                 $variantData = [
-                    'title' => $this->base_title,
-                    'price' => $this->is_sellable ? $this->base_price : 0,
-                    'status' => (bool) $this->base_status,
-                    'sku' => ($this->is_sellable && trim($this->sku) !== '') ? $this->sku : null,
-                    'quantity' => $this->is_sellable ? $this->quantity : 0,
-                    'json_attributes' => !empty($this->schema) ? $this->json_data : null,
+                    'status' => (bool) $this->variant_status,
+                    
+                    // FIX: Safely fallback to null or 0 if left blank
+                    'price' => ($this->is_sellable && $this->price !== '' && $this->price !== null) ? $this->price : null,
+                    'quantity' => ($this->is_sellable && $this->quantity !== '' && $this->quantity !== null) ? $this->quantity : 0,
+                    
+                    'sku' => ($this->is_sellable && $this->has_sku && trim($this->sku) !== '') ? $this->sku : null,
+                    'barcode' => ($this->is_sellable && $this->has_barcode && trim($this->barcode) !== '') ? $this->barcode : null,
+                    'compare_at_price' => ($this->is_sellable && $this->has_compare_at_price) ? $this->compare_at_price : null,
+                    'cost_price' => ($this->is_sellable && $this->has_cost_price) ? $this->cost_price : null,
+                    'commission_rate' => ($this->is_sellable && $this->has_commission_rate) ? $this->commission_rate : null,
+                    'supplier_id' => ($this->is_sellable && $this->has_supplier_id) ? $this->supplier_id : null,
+                    'shipping_weight' => ($this->is_sellable && $this->has_shipping_weight) ? $this->shipping_weight : null,
+                    'shipping_dimensions' => ($this->is_sellable && $this->has_shipping_dimensions && trim($this->shipping_dimensions) !== '') ? json_decode($this->shipping_dimensions, true) ?? $this->shipping_dimensions : null,
                 ];
 
                 if ($this->item) {
@@ -195,8 +245,8 @@ new #[Layout('components.layouts.admin')] class extends Component {
 }; 
 ?>
 
-<div class="max-w-xl">
-    <h1 class="text-lg font-medium mb-4">{{ $item ? 'Edit' : 'Create' }} {{ $parentGroup->base_title }} Item</h1>
+<div class="max-w-3xl">
+    <h1 class="text-lg font-medium mb-4">{{ $item ? 'Edit' : 'Create' }} {{ $parentGroup->name }} Item</h1>
 
     @error('form_error')
         <div class="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -204,55 +254,48 @@ new #[Layout('components.layouts.admin')] class extends Component {
         </div>
     @enderror
 
-    <form wire:submit="save" class="flex flex-col gap-4 text-sm">
-        <div class="flex flex-col gap-2">
-            <label>Title</label>
-            <input type="text" wire:model="base_title" class="border border-gray-300 p-1.5">
-
-            <label>Description</label>
-            <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5"></textarea>
-
-            <label class="flex items-center gap-1.5 mt-1">
-                <input type="checkbox" wire:model="base_status"> Active
-            </label>
-        </div>
-
-        @if($is_sellable)
-            <div class="border-t pt-4 flex gap-4">
-                <div class="flex-1">
-                    <label class="block mb-1">Price</label>
-                    <input type="number" step="0.01" wire:model="base_price" class="border border-gray-300 p-1.5 w-full">
+    <form wire:submit="save" class="flex flex-col gap-6 text-sm">
+        
+        <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
+            <h2 class="font-medium text-gray-700">Core Details</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block mb-1">Name</label>
+                    <input type="text" wire:model="name" class="border border-gray-300 p-1.5 w-full bg-white">
                 </div>
-
-                <div class="flex-1">
-                    <label class="block mb-1">SKU</label>
-                    <input type="text" wire:model="sku" class="border border-gray-300 p-1.5 w-full">
-                </div>
-
-                <div class="flex-1">
-                    <label class="block mb-1">Quantity</label>
-                    <input type="number" wire:model="quantity" class="border border-gray-300 p-1.5 w-full">
+                <div>
+                    <label class="block mb-1">Visibility Status</label>
+                    <select wire:model="status" class="border border-gray-300 p-1.5 w-full bg-white">
+                        <option value="Published">Published</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Archived">Archived</option>
+                    </select>
                 </div>
             </div>
-        @endif
+
+            <div>
+                <label class="block mb-1">Description</label>
+                <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5 w-full bg-white"></textarea>
+            </div>
+        </div>
 
         @if(!empty($schema))
-            <div class="border-t pt-4">
-                <h2 class="font-medium mb-2">Properties</h2>
-                <div class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
+                <h2 class="font-medium text-gray-700">Specifications</h2>
+                <div class="grid grid-cols-2 gap-4">
                     @foreach($schema as $field)
                         <div>
                             <label class="block mb-1 capitalize text-xs text-gray-600">{{ $field['name'] }}</label>
                             @if($field['type'] === 'int')
-                                <input type="number" wire:model.live.debounce.300ms="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
+                                <input type="number" wire:model.live.debounce.300ms="json_specifications.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full bg-white">
                             @elseif($field['type'] === 'boolean')
                                 <label class="flex items-center gap-1.5 mt-2">
-                                    <input type="checkbox" wire:model.live="json_data.{{ $field['name'] }}"> Yes
+                                    <input type="checkbox" wire:model.live="json_specifications.{{ $field['name'] }}"> Yes
                                 </label>
                             @elseif($field['type'] === 'expression')
-                                <input type="text" disabled value="{{ $json_data[$field['name']] ?? '0' }}" title="Formula: {{ $field['default'] }}" class="border border-gray-200 bg-gray-50 text-gray-600 p-1.5 w-full italic cursor-not-allowed">
+                                <input type="text" disabled value="{{ $json_specifications[$field['name']] ?? '0' }}" title="Formula: {{ $field['default'] }}" class="border border-gray-200 bg-gray-100 text-gray-600 p-1.5 w-full italic cursor-not-allowed">
                             @else
-                                <input type="text" wire:model.live.debounce.300ms="json_data.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full">
+                                <input type="text" wire:model.live.debounce.300ms="json_specifications.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full bg-white">
                             @endif
                         </div>
                     @endforeach
@@ -260,13 +303,84 @@ new #[Layout('components.layouts.admin')] class extends Component {
             </div>
         @endif
 
+        @if($is_sellable)
+            <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
+                <div class="flex justify-between items-center">
+                    <h2 class="font-medium text-gray-700">Variant Settings & Commercials</h2>
+                    <label class="flex items-center gap-1.5">
+                        <input type="checkbox" wire:model="variant_status"> Active for Purchase
+                    </label>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block mb-1">Price</label>
+                        <input type="number" step="0.01" wire:model="price" class="border border-gray-300 p-1.5 w-full bg-white">
+                    </div>
+                    <div>
+                        <label class="block mb-1">Quantity</label>
+                        <input type="number" wire:model="quantity" class="border border-gray-300 p-1.5 w-full bg-white">
+                    </div>
+                    
+                    @if($has_sku)
+                        <div>
+                            <label class="block mb-1">SKU</label>
+                            <input type="text" wire:model="sku" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_barcode)
+                        <div>
+                            <label class="block mb-1">Barcode</label>
+                            <input type="text" wire:model="barcode" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_compare_at_price)
+                        <div>
+                            <label class="block mb-1">Compare at Price</label>
+                            <input type="number" step="0.01" wire:model="compare_at_price" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_cost_price)
+                        <div>
+                            <label class="block mb-1">Cost Price</label>
+                            <input type="number" step="0.01" wire:model="cost_price" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_commission_rate)
+                        <div>
+                            <label class="block mb-1">Commission Rate (%)</label>
+                            <input type="number" step="0.01" wire:model="commission_rate" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_supplier_id)
+                        <div>
+                            <label class="block mb-1">Supplier ID</label>
+                            <input type="number" wire:model="supplier_id" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_shipping_weight)
+                        <div>
+                            <label class="block mb-1">Shipping Weight</label>
+                            <input type="number" step="0.01" wire:model="shipping_weight" class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                    @if($has_shipping_dimensions)
+                        <div>
+                            <label class="block mb-1">Shipping Dimensions</label>
+                            <input type="text" wire:model="shipping_dimensions" placeholder='e.g. {"L": 10, "W": 5}' class="border border-gray-300 p-1.5 w-full bg-white">
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         @if($allowedDescriptorGroups->isNotEmpty())
-            <div class="border-t pt-4">
-                <h2 class="font-medium mb-2">Descriptors</h2>
+            <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
+                <h2 class="font-medium text-gray-700">Descriptors</h2>
                 <div class="flex flex-col gap-3">
                     @foreach($allowedDescriptorGroups as $group)
                         <div>
-                            <span class="text-xs text-gray-500 block mb-1">{{ $group->base_title }}</span>
+                            <span class="text-xs text-gray-500 block mb-1">{{ $group->name }}</span>
                             @if($group->children->isEmpty())
                                 <span class="text-xs italic text-gray-400">None available</span>
                             @else
@@ -274,7 +388,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                                     @foreach($group->children as $child)
                                         <label class="flex items-center gap-1">
                                             <input type="checkbox" wire:model="selected_descriptors" value="{{ $child->id }}">
-                                            {{ $child->base_title }}
+                                            {{ $child->name }}
                                         </label>
                                     @endforeach
                                 </div>

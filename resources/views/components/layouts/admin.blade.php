@@ -23,13 +23,11 @@
             <div class="mt-6 mb-2 text-xs uppercase text-gray-500 font-semibold tracking-wider">Item Groups</div>
             <a href="/admin/groups/create" wire:navigate class="hover:underline text-blue-400 mb-2">+ New Group</a>
             
-
             @foreach(\App\Models\ItemBase::whereNull('parent_id')->get() as $group)
                 <a href="/admin/groups/{{ $group->id }}" wire:navigate class="hover:underline text-gray-300 pl-2 border-l-2 border-transparent hover:border-gray-500">
                     {{ $group->name }}
                 </a>
             @endforeach
-
             
         </nav>
     </aside>

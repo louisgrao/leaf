@@ -12,7 +12,6 @@ class ItemBase extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'status' => 'boolean',
         'is_sellable' => 'boolean',
         'json_specifications' => 'array',
     ];

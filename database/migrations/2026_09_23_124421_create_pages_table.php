@@ -25,7 +25,7 @@ return new class extends Migration
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
             $table->string('status')->default('Published');
-            $table->boolean('is_sellable')->default(true); // Added dedicated column
+            $table->boolean('is_sellable')->default(false); // Added dedicated column
             $table->json('json_specifications')->nullable();
             $table->softDeletes();
             $table->timestamps();
