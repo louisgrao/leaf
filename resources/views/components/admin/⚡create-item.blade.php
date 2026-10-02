@@ -22,7 +22,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
     
     // Sellable Variant Fields
     public $price = null;
-    public $quantity = 0;
+    public $quantity = 1;
     public $sku = '';
     public $barcode = '';
     public $compare_at_price = null;
@@ -169,10 +169,20 @@ new #[Layout('components.layouts.admin')] class extends Component {
             'description' => 'nullable|string',
             'status' => 'required|in:Published,Draft,Archived',
             'variant_status' => 'boolean',
+            'selected_descriptors' => 'array', 
         ];
 
+        foreach ($this->schema as $field) {
+            if ($field['type'] === 'int') {
+                $rules['json_specifications.' . $field['name']] = 'nullable|numeric';
+            } elseif ($field['type'] === 'boolean') {
+                $rules['json_specifications.' . $field['name']] = 'boolean';
+            } elseif ($field['type'] === 'string') {
+                $rules['json_specifications.' . $field['name']] = 'nullable|string';
+            }
+        }
+
         if ($this->is_sellable) {
-            // FIX: Allow price and quantity to be left completely blank by the user
             $rules['price'] = 'nullable|numeric|min:0';
             $rules['quantity'] = 'nullable|integer|min:0';
             
@@ -259,16 +269,19 @@ new #[Layout('components.layouts.admin')] class extends Component {
         <div class="flex flex-col gap-4 border border-gray-200 p-4 bg-gray-50">
             <div class="flex justify-between items-center">
                 <h2 class="font-medium text-gray-700">Core Details</h2>
-                <label class="flex items-center gap-1.5">
-                    <input type="checkbox" wire:model="variant_status"> Interactive (Active)
-                </label>
+                <div>
+                    <label class="flex items-center gap-1.5">
+                        <input type="checkbox" wire:model="variant_status"> Interactive (Active)
+                    </label>
+                    @error('variant_status') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                </div>
             </div>
             
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block mb-1">Name</label>
                     <input type="text" wire:model="name" class="border border-gray-300 p-1.5 w-full bg-white">
-                    @error('name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    @error('name') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                 </div>
                 <div>
                     <label class="block mb-1">Visibility Status</label>
@@ -277,14 +290,14 @@ new #[Layout('components.layouts.admin')] class extends Component {
                         <option value="Draft">Draft</option>
                         <option value="Archived">Archived</option>
                     </select>
-                    @error('status') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    @error('status') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
 
             <div>
                 <label class="block mb-1">Description</label>
                 <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5 w-full bg-white"></textarea>
-                @error('description') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                @error('description') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
             </div>
         </div>
 
@@ -306,6 +319,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                             @else
                                 <input type="text" wire:model.live.debounce.300ms="json_specifications.{{ $field['name'] }}" class="border border-gray-300 p-1.5 w-full bg-white">
                             @endif
+                            @error('json_specifications.'.$field['name']) <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endforeach
                 </div>
@@ -320,58 +334,68 @@ new #[Layout('components.layouts.admin')] class extends Component {
                     <div>
                         <label class="block mb-1">Price</label>
                         <input type="number" step="0.01" wire:model="price" class="border border-gray-300 p-1.5 w-full bg-white">
+                        @error('price') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                     </div>
                     <div>
                         <label class="block mb-1">Quantity</label>
                         <input type="number" wire:model="quantity" class="border border-gray-300 p-1.5 w-full bg-white">
+                        @error('quantity') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                     </div>
                     
                     @if($has_sku)
                         <div>
                             <label class="block mb-1">SKU</label>
                             <input type="text" wire:model="sku" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('sku') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_barcode)
                         <div>
                             <label class="block mb-1">Barcode</label>
                             <input type="text" wire:model="barcode" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('barcode') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_compare_at_price)
                         <div>
                             <label class="block mb-1">Compare at Price</label>
                             <input type="number" step="0.01" wire:model="compare_at_price" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('compare_at_price') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_cost_price)
                         <div>
                             <label class="block mb-1">Cost Price</label>
                             <input type="number" step="0.01" wire:model="cost_price" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('cost_price') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_commission_rate)
                         <div>
                             <label class="block mb-1">Commission Rate (%)</label>
                             <input type="number" step="0.01" wire:model="commission_rate" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('commission_rate') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_supplier_id)
                         <div>
                             <label class="block mb-1">Supplier ID</label>
                             <input type="number" wire:model="supplier_id" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('supplier_id') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_shipping_weight)
                         <div>
                             <label class="block mb-1">Shipping Weight</label>
                             <input type="number" step="0.01" wire:model="shipping_weight" class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('shipping_weight') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                     @if($has_shipping_dimensions)
                         <div>
                             <label class="block mb-1">Shipping Dimensions</label>
                             <input type="text" wire:model="shipping_dimensions" placeholder='e.g. {"L": 10, "W": 5}' class="border border-gray-300 p-1.5 w-full bg-white">
+                            @error('shipping_dimensions') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                     @endif
                 </div>
@@ -399,6 +423,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                             @endif
                         </div>
                     @endforeach
+                    @error('selected_descriptors') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
         @endif

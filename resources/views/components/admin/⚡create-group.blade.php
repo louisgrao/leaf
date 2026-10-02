@@ -97,8 +97,16 @@ new #[Layout('components.layouts.admin')] class extends Component {
             'description' => 'nullable|string',
             'status' => 'required|in:Published,Draft,Archived',
             'is_sellable' => 'boolean',
+            'has_sku' => 'boolean',
+            'has_barcode' => 'boolean',
+            'has_compare_at_price' => 'boolean',
+            'has_cost_price' => 'boolean',
+            'has_commission_rate' => 'boolean',
+            'has_supplier_id' => 'boolean',
+            'has_shipping_weight' => 'boolean',
+            'has_shipping_dimensions' => 'boolean',
+            'descriptor_groups' => 'array',
         ]);
-
         $filteredSchema = array_values(array_filter($this->schema, function ($row) {
             return !empty(trim($row['name'] ?? ''));
         }));
@@ -204,27 +212,37 @@ new #[Layout('components.layouts.admin')] class extends Component {
 
     <form wire:submit="save" class="flex flex-col gap-4">
         <div class="flex flex-col gap-2 text-sm">
-            <label>Name</label>
-            <input type="text" wire:model="name" class="border border-gray-300 p-1.5">
-
-            <label>Description</label>
-            <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5"></textarea>
-
-            <label>Visibility Status</label>
-            <select wire:model="status" class="border border-gray-300 p-1.5 bg-white">
-                <option value="Published">Published</option>
-                <option value="Draft">Draft</option>
-                <option value="Archived">Archived</option>
-            </select>
+            <div>
+                <label>Name</label>
+                <input type="text" wire:model="name" class="border border-gray-300 p-1.5 w-full">
+                @error('name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+            </div>
+            <div>
+                <label>Description</label>
+                <textarea wire:model="description" rows="3" class="border border-gray-300 p-1.5 w-full"></textarea>
+                @error('description') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+            </div>
+            <div>
+                <label>Visibility Status</label>
+                <select wire:model="status" class="border border-gray-300 p-1.5 w-full bg-white">
+                    <option value="Published">Published</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Archived">Archived</option>
+                </select>
+                @error('status') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+            </div>
         </div>
 
         <div class="border-t pt-4">
             <h2 class="text-sm font-medium mb-2">Group Type</h2>
-            <div class="flex gap-4 text-sm mb-4">
-                <label class="flex items-center gap-1.5">
-                    <input type="checkbox" wire:model.live="is_sellable" value="1"> 
-                    Sellable Items (Enables purchasing attributes for children)
-                </label>
+            <div class="flex flex-col gap-1 mb-4">
+                <div class="flex gap-4 text-sm">
+                    <label class="flex items-center gap-1.5">
+                        <input type="checkbox" wire:model.live="is_sellable" value="1"> 
+                        Sellable Items (Enables purchasing attributes for children)
+                    </label>
+                </div>
+                @error('is_sellable') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
             </div>
 
             @if($is_sellable)
@@ -237,30 +255,62 @@ new #[Layout('components.layouts.admin')] class extends Component {
                         <label class="flex items-center gap-1.5 text-gray-400">
                             <input type="checkbox" checked disabled> Quantity
                         </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_sku" value="1"> SKU
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_barcode" value="1"> Barcode
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_compare_at_price" value="1"> Compare at Price
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_cost_price" value="1"> Cost Price
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_commission_rate" value="1"> Commission Rate
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_supplier_id" value="1"> Supplier ID
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_shipping_weight" value="1"> Shipping Weight
-                        </label>
-                        <label class="flex items-center gap-1.5">
-                            <input type="checkbox" wire:model="has_shipping_dimensions" value="1"> Shipping Dimensions
-                        </label>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_sku" value="1"> SKU
+                            </label>
+                            @error('has_sku') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_barcode" value="1"> Barcode
+                            </label>
+                            @error('has_barcode') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_compare_at_price" value="1"> Compare at Price
+                            </label>
+                            @error('has_compare_at_price') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_cost_price" value="1"> Cost Price
+                            </label>
+                            @error('has_cost_price') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_commission_rate" value="1"> Commission Rate
+                            </label>
+                            @error('has_commission_rate') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_supplier_id" value="1"> Supplier ID
+                            </label>
+                            @error('has_supplier_id') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_shipping_weight" value="1"> Shipping Weight
+                            </label>
+                            @error('has_shipping_weight') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        
+                        <div>
+                            <label class="flex items-center gap-1.5">
+                                <input type="checkbox" wire:model="has_shipping_dimensions" value="1"> Shipping Dimensions
+                            </label>
+                            @error('has_shipping_dimensions') <span class="text-red-500 text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
                     </div>
                 </div>
             @endif
@@ -310,7 +360,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                                             }
                                             return escaped;
                                         }
-                                    }" class="relative flex-1 font-mono text-sm">
+                                     }" class="relative flex-1 font-mono text-sm">
                                     
                                     <div x-ref="backdrop" class="absolute inset-0 p-1 border border-transparent whitespace-pre text-gray-600 pointer-events-none overflow-hidden" x-html="highlighted"></div>
                                     
@@ -323,9 +373,12 @@ new #[Layout('components.layouts.admin')] class extends Component {
                             <button type="button" wire:click="removeSchemaRow({{ $index }})" class="text-red-600 text-xs px-1">Remove</button>
                         </div>
                         
-                        @error("schema.{$index}.default")
-                            <span class="text-red-500 text-xs">{{ $message }}</span>
-                        @enderror
+                        <!-- Consolidated Schema Errors -->
+                        <div class="flex flex-col gap-1">
+                            @error("schema.{$index}.name") <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            @error("schema.{$index}.type") <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                            @error("schema.{$index}.default") <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                        </div>
                     </div>
                 @endforeach
             </div>
@@ -343,6 +396,7 @@ new #[Layout('components.layouts.admin')] class extends Component {
                             {{ $groupOption->name }}
                         </label>
                     @endforeach
+                    @error('descriptor_groups') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
             @endif
         </div>
