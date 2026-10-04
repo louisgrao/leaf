@@ -22,7 +22,6 @@ return new class extends Migration
         Schema::create('item_bases', function (Blueprint $table) {
             $table->id();
             $table->foreignId('parent_id')->nullable()->constrained('item_bases')->nullOnDelete();
-            $table->foreignId('template_id')->nullable()->constrained('templates')->nullOnDelete();
             $table->string('name');
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
