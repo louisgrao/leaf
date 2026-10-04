@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        
         Schema::create('pages', function (Blueprint $table) {
             $table->id();
             $table->string('title');
@@ -21,6 +22,7 @@ return new class extends Migration
         Schema::create('item_bases', function (Blueprint $table) {
             $table->id();
             $table->foreignId('parent_id')->nullable()->constrained('item_bases')->nullOnDelete();
+            $table->foreignId('template_id')->nullable()->constrained('templates')->nullOnDelete();
             $table->string('name');
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
@@ -62,8 +64,7 @@ return new class extends Migration
             $table->timestamps();
             
             $table->unique(['primary_item_id', 'secondary_item_id']);
-        });
-    
+        });    
     }
 
     /**
