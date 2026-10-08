@@ -12,12 +12,6 @@
         <nav class="flex justify-between border-b pb-2 mb-4">
             <div class="flex gap-4">
                 <a href="/" wire:navigate class="underline">Home</a>
-
-                @foreach (\App\Models\Page::all() as $page)
-                    <a href="/{{ $page->slug }}" wire:navigate class="underline">
-                        {{ $page->title }}
-                    </a>
-                @endforeach
             </div>
 
             <div>

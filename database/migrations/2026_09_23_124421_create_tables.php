@@ -11,17 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        
-        Schema::create('pages', function (Blueprint $table) {
+
+        Schema::create('templates', function (Blueprint $table) {
             $table->id();
-            $table->string('title');
-            $table->string('slug')->unique();
+            $table->string('name');
+            $table->string('slug')->nullable()->unique();
+            $table->string('type');
+            $table->json('schema')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
 
         Schema::create('item_bases', function (Blueprint $table) {
             $table->id();
             $table->foreignId('parent_id')->nullable()->constrained('item_bases')->nullOnDelete();
+            $table->foreignId('template_id')->nullable()->constrained('templates')->nullOnDelete();
             $table->string('name');
             $table->string('slug')->unique()->nullable();
             $table->text('description')->nullable();
@@ -39,7 +43,7 @@ return new class extends Migration
             $table->integer('sort_order')->default(0);
             $table->json('json_specifications')->nullable();
             $table->json('json_options')->nullable();
-            
+
             // Sellable properties
             $table->string('sku')->unique()->nullable();
             $table->string('barcode')->nullable();
@@ -51,7 +55,7 @@ return new class extends Migration
             $table->integer('quantity')->default(0);
             $table->decimal('shipping_weight', 8, 2)->nullable();
             $table->json('shipping_dimensions')->nullable();
-            
+
             $table->softDeletes();
             $table->timestamps();
         });
@@ -61,9 +65,9 @@ return new class extends Migration
             $table->foreignId('primary_item_id')->constrained('item_bases')->cascadeOnDelete();
             $table->foreignId('secondary_item_id')->constrained('item_bases')->cascadeOnDelete();
             $table->timestamps();
-            
+
             $table->unique(['primary_item_id', 'secondary_item_id']);
-        });    
+        });
     }
 
     /**
@@ -74,6 +78,7 @@ return new class extends Migration
         Schema::dropIfExists('item_item');
         Schema::dropIfExists('item_variants');
         Schema::dropIfExists('item_bases');
+        Schema::dropIfExists('templates');
         Schema::dropIfExists('pages');
     }
 };
