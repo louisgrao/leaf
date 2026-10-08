@@ -1,5 +1,6 @@
 *.log
 .DS_Store
+.antigravityrules
 .env
 .env.backup
 .env.production
@@ -25,3 +26,4 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+.agent/
